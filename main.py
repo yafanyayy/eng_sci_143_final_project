@@ -1,4 +1,5 @@
 from camera_calib import calibrate_camera
+from estimate_new_camera_pose import estimate_new_camera_pose
 # from detect_and_match_keypoints import detect_and_match_keypoints
 # from estimate_essential_matrix import estimate_essential_matrix
 # from extract_camera_pose import extract_camera_pose
