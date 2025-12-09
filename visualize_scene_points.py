@@ -1,5 +1,6 @@
 import numpy as np
 import plotly.graph_objects as go
+
 def visualize_scene_points(scene_points, camera_poses, img_h, img_w):
   # Add points to figure as a scatterplot
   # Clean points slightly
