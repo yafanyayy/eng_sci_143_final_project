@@ -1,5 +1,6 @@
 import numpy as np
 import plotly.graph_objects as go
+from es143_utils import add_plotly_camera
 
 def visualize_scene_points(scene_points, camera_poses, img_h, img_w):
   # Add points to figure as a scatterplot
@@ -31,7 +32,7 @@ def visualize_scene_points(scene_points, camera_poses, img_h, img_w):
   for i, (R, t) in enumerate(camera_poses):
       # compute camera matrix from rotation and translation
       P = np.hstack((R, t))
-      add_plotly_camera(img_h, img_w, P, i, fig)
+      add_plotly_camera(img_h, img_w, P, 2.0, fig)
 
   fig.update_layout(
       scene=dict(
@@ -41,7 +42,7 @@ def visualize_scene_points(scene_points, camera_poses, img_h, img_w):
           zaxis=dict(title='z')
       ),
       margin=dict(l=0, r=0, t=30, b=0),
-      title=f'point cloud (colored by {color_by})',
+      title=f'point cloud',
       scene_camera=dict(
           up=dict(x=0, y=-1, z=0),
           center=dict(x=0, y=0, z=0),

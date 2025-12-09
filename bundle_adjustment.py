@@ -37,8 +37,8 @@ def bundle_adjustment(scene_points, camera_poses, camera_matrix, img_points):
     camera_mask = torch.ones(camera_poses.shape[0], 1, dtype=torch.float32)
     camera_mask[0] = 0. # Fix the first camera pose
 
-
-    optimizer = torch.optim.Adam(list(scene_points.parameters()) + list(camera_poses.parameters()), lr=1e-3, momentum = 0.9)
+    # TODO: fix this parameter passing in depending on how the parameters are set up
+    optimizer = torch.optim.Adam(list(scene_points.parameters()) + list(camera_poses.parameters()), lr=1e-3)
     num_iterations = 1000
 
     print("Initial loss before bundle adjustment:", loss(project_points(scene_points, camera_poses, camera_matrix), img_points).item())
