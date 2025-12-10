@@ -17,5 +17,10 @@ __pycache__/
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 
+<<<<<<< Updated upstream
 # Virtual Environments
 venv/
+=======
+
+
+>>>>>>> Stashed changes
