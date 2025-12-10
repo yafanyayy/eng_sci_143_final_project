@@ -45,4 +45,4 @@ def detect_and_match_keypoints(img_grayscales):
 
         # do we want to return the keypoints_list as well?
 
-    return matched_keypoints
+    return matched_keypoints, keypoints_list
