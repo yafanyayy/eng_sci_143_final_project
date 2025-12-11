@@ -28,6 +28,7 @@ def visualize_scene_points(scene_points, camera_poses, img_h, img_w):
         ]
     )
 
+    # TODO: depending on what gets input, might need to change this code to accept camara_rotations and camera_translations as two different inputs
   # Add cameras
   for i, (R, t) in enumerate(camera_poses):
       # compute camera matrix from rotation and translation
@@ -53,3 +54,22 @@ def visualize_scene_points(scene_points, camera_poses, img_h, img_w):
   return fig
 
 
+# Test code
+if __name__ == "__main__":
+    # Generate some random scene points and camera poses for testing
+    num_cameras = 5
+    num_points = 100
+    img_h, img_w = 480, 640
+
+    scene_points = np.random.randn(num_cameras, num_points, 3) * 5.0 + np.array([0, 0, 10])
+    camera_poses = []
+    for i in range(num_cameras):
+        angle = i * (2 * np.pi / num_cameras)
+        R = np.array([[np.cos(angle), 0, np.sin(angle)],
+                      [0, 1, 0],
+                      [-np.sin(angle), 0, np.cos(angle)]])
+        t = np.array([[5 * np.cos(angle)], [0], [5 * np.sin(angle)]])
+        camera_poses.append((R, t))
+
+    fig = visualize_scene_points(scene_points, camera_poses, img_h, img_w)
+    fig.show()
