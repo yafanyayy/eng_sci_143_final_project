@@ -215,7 +215,7 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
         camera_matrix = compute_camera_matrix(focal_length, principal_point_x, principal_point_y)
 
         # Keep loss as a torch tensor so we can call backward() on it
-        current_loss = 0.0
+        current_loss = torch.tensor(0.0, device=scene_points.device)
         # Compute loss over all cameras (that are not the first one)
         for i in range(camera_rotations.shape[0]):
             # Use a differentiable torch projection so gradients flow
@@ -320,7 +320,7 @@ if __name__ == "__main__":
     # camera_translations_t = torch.from_numpy(camera_translations_np).float()
     # img_points_t = torch.from_numpy(img_points_np).float()
 
-    # Run bundle adjustment (function expects torch tensors)
+    # Run bundle adjustment (function expects numpy arrays)
     optimized_scene_points, optimized_camera_rotations, optimized_camera_translations, optimized_camera_matrix = bundle_adjustment(
         scene_points_np,
         camera_rotations_np,
