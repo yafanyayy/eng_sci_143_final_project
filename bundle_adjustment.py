@@ -52,7 +52,7 @@ def rodrigues_torch(rvec: torch.Tensor) -> torch.Tensor:
     device = r.device
     theta = torch.norm(r)
     # use detach().item() to check near-zero without keeping grad
-    if theta.detach().abs().item() == 0.0:
+    if theta.detach().abs().item() < 1e-8:
         return torch.eye(3, dtype=dtype, device=device)
     k = r / theta
 
@@ -75,8 +75,8 @@ def project_points_torch(scene_points: torch.Tensor, rvec: torch.Tensor, tvec: t
     - rvec: rotation vector (3,) in axis-angle
     - tvec: translation (3,) or (3,)
     - camera_matrix: 3x3 torch matrix (fx, fy, cx, cy)
+    - distCoeffs: distortion coefficients (k1, k2, p1, p2[, k3]); if provided, both radial and tangential distortion are applied.
     Returns: tensor shape (N, 2)
-    Note: distortion is ignored for simplicity.
     """
     # rotation matrix
     R = rodrigues_torch(rvec.reshape(3))
@@ -98,15 +98,14 @@ def project_points_torch(scene_points: torch.Tensor, rvec: torch.Tensor, tvec: t
     dtype = camera_matrix.dtype
     device = camera_matrix.device if hasattr(camera_matrix, 'device') else None
     if distCoeffs is None:
-        k1 = k2 = p1 = p2 = k3 = torch.tensor(0.0, dtype=dtype)
+        k1 = k2 = p1 = p2 = k3 = torch.tensor(0.0, dtype=dtype, device=device)
     else:
         if isinstance(distCoeffs, torch.Tensor):
-            d = distCoeffs.reshape(-1).to(dtype)
+            d = distCoeffs.reshape(-1).to(dtype).to(device) if device is not None else distCoeffs.reshape(-1).to(dtype)
         else:
-            d = torch.tensor(np.array(distCoeffs).reshape(-1), dtype=dtype)
-
+            d = torch.tensor(np.array(distCoeffs).reshape(-1), dtype=dtype, device=device)
         # pad or truncate to 5 entries
-        d_full = torch.zeros(5, dtype=dtype)
+        d_full = torch.zeros(5, dtype=dtype, device=device)
         n = min(d.numel(), 5)
         d_full[:n] = d[:n]
         k1, k2, p1, p2, k3 = d_full[0], d_full[1], d_full[2], d_full[3], d_full[4]
@@ -162,10 +161,10 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
     principal_point_x = torch.nn.Parameter(torch.tensor([camera_matrix[0,2]], dtype=torch.float32), requires_grad=True)
     principal_point_y = torch.nn.Parameter(torch.tensor([camera_matrix[1,2]], dtype=torch.float32), requires_grad=True)
 
-    # Paramaterize 3D points
+    # Parameterize 3D points
     scene_points = torch.nn.Parameter(torch.tensor(scene_points, dtype=torch.float32), requires_grad=True)
 
-    # Paramaterize translations
+    # Parameterize translations
     camera_translations = torch.nn.Parameter(torch.tensor(camera_translations, dtype=torch.float32), requires_grad=True)
 
     # Convert camera_rotations to axis-angle (Rodrigues) form before parameterizing
@@ -180,20 +179,28 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
     camera_mask[0] = 0. # Fix the first camera pose
 
     # TODO: Change learning rate as needed
-    optimizer = torch.optim.Adam([scene_points, camera_rotations, camera_translations, focal_length, principal_point_x, principal_point_y], lr=1e-8)
+    optimizer = torch.optim.Adam([scene_points, camera_rotations, camera_translations, focal_length, principal_point_x, principal_point_y], lr=1e-6)
     # TODO: Increase num_iterations after we verify this works
     num_iterations = 1000
+
+    best_loss = float('inf')
+    best_scene_points = None
+    best_camera_rotations = None
+    best_camera_translations = None
+    best_focal_length = None
+    best_principal_point_x = None
+    best_principal_point_y = None
 
     for iter in range(num_iterations):
         optimizer.zero_grad()
 
-        # Recompute camera matrix from parameters
+        # Recompute camera matrix from parameters (keep as tensor so graph connects to focal/principal params)
         camera_matrix = compute_camera_matrix(focal_length, principal_point_x, principal_point_y)
 
         # Keep loss as a torch tensor so we can call backward() on it
-        current_loss = torch.tensor(0.0, dtype=torch.float32, requires_grad=True)
+        current_loss = torch.tensor(0.0, dtype=torch.float32)
         # Compute loss over all cameras (that are not the first one)
-        for i in range(1, camera_rotations.shape[0]):
+        for i in range(camera_rotations.shape[0]):
             # Use a differentiable torch projection so gradients flow
             rvec = camera_rotations[i].reshape(3)
             tvec = camera_translations[i].reshape(3)
@@ -208,6 +215,16 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
         current_loss.backward()
         optimizer.step()
 
+        # Keep the parameters that correspond to the best loss so far
+        if current_loss.item() < best_loss:
+            best_loss = current_loss.item()
+            best_scene_points = scene_points.detach().clone()
+            best_camera_rotations = camera_rotations.detach().clone()
+            best_camera_translations = camera_translations.detach().clone()
+            best_focal_length = focal_length.detach().clone()
+            best_principal_point_x = principal_point_x.detach().clone()
+            best_principal_point_y = principal_point_y.detach().clone()
+
         # Print status report
         if iter % 100 == 0:
             # current_loss is a tensor; use .item() for printing only
@@ -215,14 +232,20 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
     
     print("Final loss after bundle adjustment:", current_loss.item())
 
+    print("Best loss after bundle adjustment:", best_loss)
     # Convert all parameters back to numpy arrays for output
-    scene_points = scene_points.detach().numpy()
-    camera_rots = np.zeros((camera_rotations.shape[0], 3, 3), dtype=np.float32)
-    num_cameras = camera_rotations.shape[0]
+    scene_points = best_scene_points.detach().numpy()
+    # Convert camera rotations back to rotation matrices
+    camera_rots = np.zeros((best_camera_rotations.shape[0], 3, 3), dtype=np.float32)
     for i in range(num_cameras):
-        camera_rots[i] = cv2.Rodrigues(camera_rotations[i].detach().numpy())[0]
-    camera_translations = camera_translations.detach().numpy()
-    camera_matrix = compute_camera_matrix(focal_length.item(), principal_point_x.item(), principal_point_y.item()).detach().numpy()
+        camera_rots[i] = cv2.Rodrigues(best_camera_rotations[i].detach().numpy())[0]
+    camera_translations = best_camera_translations.detach().numpy()
+    camera_matrix = np.zeros((3,3), dtype=np.float32)
+    camera_matrix[0, 0] = best_focal_length.item()
+    camera_matrix[1, 1] = best_focal_length.item()
+    camera_matrix[0, 2] = best_principal_point_x.item()
+    camera_matrix[1, 2] = best_principal_point_y.item()
+    camera_matrix[2, 2] = 1.0
 
     return scene_points, camera_rots, camera_translations, camera_matrix
 
@@ -250,7 +273,7 @@ if __name__ == "__main__":
     img_points_np = np.zeros((num_cameras, num_points, 2), dtype=np.float32)
     for i in range(num_cameras):
         img_points_np[i] = project_points_np(scene_points_np, camera_rotations_np[i], camera_translations_np[i], camera_matrix, np.zeros((4,1), dtype=np.float32))
-        img_points_np[i] += 0.01 * np.random.randn(*img_points_np[i].shape).astype(np.float32)  # Add 
+        img_points_np[i] += 0.01 * np.random.randn(*img_points_np[i].shape).astype(np.float32) # add small noise 
     print(img_points_np.shape)
 
     # Dummy distortion coefficients (NumPy)
