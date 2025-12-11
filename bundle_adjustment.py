@@ -212,9 +212,9 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
         
         # Fix the first camera pose by zeroing its gradients
         # This prevents the optimizer from updating camera_rotations[0] and camera_translations[0]
-        if camera_rotations.grad is not None:
+        if camera_rotations.grad is not None and camera_rotations.grad.shape[0] > 0:
             camera_rotations.grad[0].zero_()
-        if camera_translations.grad is not None:
+        if camera_translations.grad is not None and camera_translations.grad.shape[0] > 0:
             camera_translations.grad[0].zero_()
         
         optimizer.step()
