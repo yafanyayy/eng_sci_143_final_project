@@ -174,10 +174,6 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
         camera_rotations[i] = cv2.Rodrigues(camera_rots[i])[0].astype(np.float32)
     camera_rotations = torch.nn.Parameter(torch.tensor(camera_rotations, dtype=torch.float32), requires_grad=True)
 
-    # TODO: not sure where to put this? - want to fix first camera pose
-    camera_mask = torch.ones(camera_rots.shape[0], 1, dtype=torch.float32)
-    camera_mask[0] = 0. # Fix the first camera pose
-
     # TODO: Change learning rate as needed
     optimizer = torch.optim.Adam([scene_points, camera_rotations, camera_translations, focal_length, principal_point_x, principal_point_y], lr=1e-6)
     # TODO: Increase num_iterations after we verify this works
@@ -199,7 +195,7 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
 
         # Keep loss as a torch tensor so we can call backward() on it
         current_loss = torch.tensor(0.0, dtype=torch.float32)
-        # Compute loss over all cameras (that are not the first one)
+        # Compute loss over all cameras
         for i in range(camera_rotations.shape[0]):
             # Use a differentiable torch projection so gradients flow
             rvec = camera_rotations[i].reshape(3)
@@ -210,9 +206,17 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
             img_i = img_points[i]
 
             # Accumulate the tensor loss (don't call .item() here, that detaches the value)
-            current_loss = current_loss + loss_fn(projected_points, img_i) * camera_mask[i]
+            current_loss = current_loss + loss_fn(projected_points, img_i)
 
         current_loss.backward()
+        
+        # Fix the first camera pose by zeroing its gradients
+        # This prevents the optimizer from updating camera_rotations[0] and camera_translations[0]
+        if camera_rotations.grad is not None:
+            camera_rotations.grad[0].zero_()
+        if camera_translations.grad is not None:
+            camera_translations.grad[0].zero_()
+        
         optimizer.step()
 
         # Keep the parameters that correspond to the best loss so far
