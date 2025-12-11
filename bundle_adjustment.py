@@ -73,7 +73,7 @@ def rodrigues_torch(rvec: torch.Tensor) -> torch.Tensor:
 def project_points_torch(scene_points: torch.Tensor, rvec: torch.Tensor, tvec: torch.Tensor, camera_matrix: torch.Tensor, distCoeffs=None) -> torch.Tensor:
     """Project 3D points (N,3) to 2D using torch ops (differentiable).
     - rvec: rotation vector (3,) in axis-angle
-    - tvec: translation (3,) or (3,)
+    - tvec: translation (3,) or (3,1)
     - camera_matrix: 3x3 torch matrix (fx, fy, cx, cy)
     - distCoeffs: distortion coefficients (k1, k2, p1, p2[, k3]); if provided, both radial and tangential distortion are applied.
     Returns: tensor shape (N, 2)
@@ -140,7 +140,24 @@ def compute_camera_matrix(focal_length, principal_point_x, principal_point_y):
     return camera_matrix
 
 def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_matrix, img_points, distCoeffs):
-    loss_fn = torch.nn.MSELoss()
+    '''
+    Perform bundle adjustment to refine 3D scene points and camera poses.
+    Inputs:
+    - scene_points: Nx3 numpy array of initial 3D points
+    - camera_rots: Mx3x3 numpy array of initial camera rotation matrices
+    - camera_translations: Mx3 numpy array of initial camera translations
+    - camera_matrix: 3x3 numpy array of initial camera intrinsic matrix
+    - img_points: MxNx2 numpy array of observed 2D image points for each camera
+    - distCoeffs: distortion coefficients (k1, k2, p1, p2[, k3]) as numpy array
+    Outputs:
+    - optimized_scene_points: Nx3 numpy array of refined 3D points
+    - optimized_camera_rots: Mx3x3 numpy array of refined camera rotation matrices 
+    - optimized_camera_translations: Mx3 numpy array of refined camera translations
+    - optimized_camera_matrix: 3x3 numpy array of refined camera intrinsic matrix
+    '''
+    
+    
+    loss = torch.nn.MSELoss()
     # Ensure img_points is a torch tensor for loss computation
     if not isinstance(img_points, torch.Tensor):
         img_points = torch.tensor(img_points, dtype=torch.float32)
@@ -157,9 +174,9 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
     # Write a helper function to construct the camera matrix/principal point from parameters
     # Have focal length as it's own parameter 
     # Question: only turn on ability to optimize the camera matrix for the extension
-    focal_length = torch.nn.Parameter(torch.tensor([camera_matrix[0,0]], dtype=torch.float32), requires_grad=True)
-    principal_point_x = torch.nn.Parameter(torch.tensor([camera_matrix[0,2]], dtype=torch.float32), requires_grad=True)
-    principal_point_y = torch.nn.Parameter(torch.tensor([camera_matrix[1,2]], dtype=torch.float32), requires_grad=True)
+    focal_length = torch.nn.Parameter(torch.tensor(camera_matrix[0,0], dtype=torch.float32), requires_grad=True)
+    principal_point_x = torch.nn.Parameter(torch.tensor(camera_matrix[0,2], dtype=torch.float32), requires_grad=True)
+    principal_point_y = torch.nn.Parameter(torch.tensor(camera_matrix[1,2], dtype=torch.float32), requires_grad=True)
 
     # Parameterize 3D points
     scene_points = torch.nn.Parameter(torch.tensor(scene_points, dtype=torch.float32), requires_grad=True)
@@ -198,7 +215,7 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
         camera_matrix = compute_camera_matrix(focal_length, principal_point_x, principal_point_y)
 
         # Keep loss as a torch tensor so we can call backward() on it
-        current_loss = torch.tensor(0.0, dtype=torch.float32)
+        current_loss = 0.0
         # Compute loss over all cameras (that are not the first one)
         for i in range(camera_rotations.shape[0]):
             # Use a differentiable torch projection so gradients flow
@@ -210,9 +227,27 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
             img_i = img_points[i]
 
             # Accumulate the tensor loss (don't call .item() here, that detaches the value)
-            current_loss = current_loss + loss_fn(projected_points, img_i) * camera_mask[i]
+            current_loss = current_loss + loss(projected_points, img_i) * camera_mask[i]
 
         current_loss.backward()
+
+        # Prevent updates to the first camera (index 0).
+        # The mask only zeros the loss contribution but does not stop gradients.
+        # Zero the gradients for the fixed camera parameters so optimizer.step()
+        # will not change them.
+        if hasattr(camera_rotations, 'grad') and camera_rotations.grad is not None:
+            try:
+                camera_rotations.grad[0].zero_()
+            except Exception:
+                # Fallback: if shapes differ, set using slice
+                camera_rotations.grad[0:1].zero_()
+
+        if hasattr(camera_translations, 'grad') and camera_translations.grad is not None:
+            try:
+                camera_translations.grad[0].zero_()
+            except Exception:
+                camera_translations.grad[0:1].zero_()
+
         optimizer.step()
 
         # Keep the parameters that correspond to the best loss so far
