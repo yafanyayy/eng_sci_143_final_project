@@ -143,14 +143,14 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
     '''
     Perform bundle adjustment to refine 3D scene points and camera poses.
     Inputs:
-    - scene_points: Nx3 numpy array of initial 3D points
+    - scene_points: MxNx3 numpy array of initial 3D points, where scene_points[m] gives the Ax3 points for camera m, where A is the number of points observed by camera m
     - camera_rots: Mx3x3 numpy array of initial camera rotation matrices
     - camera_translations: Mx3 numpy array of initial camera translations
     - camera_matrix: 3x3 numpy array of initial camera intrinsic matrix
-    - img_points: MxNx2 numpy array of observed 2D image points for each camera
+    - img_points: MxNx2 numpy array of observed 2D image points for each camera, where image_points[m] gives the Ax2 points for camera m, where A is the number of points observed by camera m
     - distCoeffs: distortion coefficients (k1, k2, p1, p2[, k3]) as numpy array
     Outputs:
-    - optimized_scene_points: Nx3 numpy array of refined 3D points
+    - optimized_scene_points: MxNx3 numpy array of refined 3D points
     - optimized_camera_rots: Mx3x3 numpy array of refined camera rotation matrices 
     - optimized_camera_translations: Mx3 numpy array of refined camera translations
     - optimized_camera_matrix: 3x3 numpy array of refined camera intrinsic matrix
@@ -221,7 +221,7 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
             # Use a differentiable torch projection so gradients flow
             rvec = camera_rotations[i].reshape(3)
             tvec = camera_translations[i].reshape(3)
-            projected_points = project_points_torch(scene_points, rvec, tvec, camera_matrix, distCoeffs)
+            projected_points = project_points_torch(scene_points[i], rvec, tvec, camera_matrix, distCoeffs)
 
             # Ensure img_points[i] is a torch tensor (img_points converted above)
             img_i = img_points[i]
@@ -319,6 +319,7 @@ if __name__ == "__main__":
     # camera_rotations_t = torch.from_numpy(camera_rotations_np).float()
     # camera_translations_t = torch.from_numpy(camera_translations_np).float()
     # img_points_t = torch.from_numpy(img_points_np).float()
+    print("Unoptimized camera rotations:", camera_rotations_np)
 
     # Run bundle adjustment (function expects numpy arrays)
     optimized_scene_points, optimized_camera_rotations, optimized_camera_translations, optimized_camera_matrix = bundle_adjustment(
