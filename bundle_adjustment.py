@@ -261,7 +261,7 @@ def bundle_adjustment(scene_points, camera_rots, camera_translations, camera_mat
             best_principal_point_y = principal_point_y.detach().clone()
 
         # Print status report
-        if iter % 100 == 0:
+        elif iter % 100 == 0:
             # current_loss is a tensor; use .item() for printing only
             print(f"Iteration {iter}, Loss: {current_loss.item()}")
     
@@ -290,7 +290,7 @@ if __name__ == "__main__":
     num_cameras = 5
 
     # Random 3D points (NumPy)
-    scene_points_np = np.random.randn(num_points, 3).astype(np.float32)
+    scene_points_np = np.random.randn(num_cameras, num_points, 3).astype(np.float32)
 
     # Random camera rotations (as rotation matrices) and translations (NumPy)
     camera_rotations_np = np.zeros((num_cameras, 3, 3), dtype=np.float32)
@@ -307,9 +307,9 @@ if __name__ == "__main__":
     # Dummy image points (simulate with true projected points + noise) using NumPy
     img_points_np = np.zeros((num_cameras, num_points, 2), dtype=np.float32)
     for i in range(num_cameras):
-        img_points_np[i] = project_points_np(scene_points_np, camera_rotations_np[i], camera_translations_np[i], camera_matrix, np.zeros((4,1), dtype=np.float32))
-        img_points_np[i] += 0.01 * np.random.randn(*img_points_np[i].shape).astype(np.float32) # add small noise 
-    print(img_points_np.shape)
+        img_points_np[i] = project_points_np(scene_points_np[i], camera_rotations_np[i], camera_translations_np[i], camera_matrix, np.zeros((4,1), dtype=np.float32))
+        # img_points_np[i] += 0.01 * np.random.randn(*img_points_np[i].shape).astype(np.float32) # add small noise 
+    # print(img_points_np[0] - project_points_np(scene_points_np[0], camera_rotations_np[0], camera_translations_np[0], camera_matrix, np.zeros((4,1), dtype=np.float32)))
 
     # Dummy distortion coefficients (NumPy)
     distCoeffs = np.zeros((4, 1), dtype=np.float32)
@@ -319,7 +319,7 @@ if __name__ == "__main__":
     # camera_rotations_t = torch.from_numpy(camera_rotations_np).float()
     # camera_translations_t = torch.from_numpy(camera_translations_np).float()
     # img_points_t = torch.from_numpy(img_points_np).float()
-    print("Unoptimized camera rotations:", camera_rotations_np)
+    # print("Unoptimized camera rotations:", camera_rotations_np)
 
     # Run bundle adjustment (function expects numpy arrays)
     optimized_scene_points, optimized_camera_rotations, optimized_camera_translations, optimized_camera_matrix = bundle_adjustment(
